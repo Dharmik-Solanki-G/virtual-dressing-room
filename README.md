@@ -1,18 +1,17 @@
 Virtual Dressing Room
-Virtual Dressing Room is a real-time application that allows users to try on different shirts using their webcam. Leveraging MediaPipe for pose detection and OpenCV for image processing, this project provides an interactive virtual fitting experience.
+Virtual Dressing Room is a real-time application that lets users try on different shirts using their webcam. It employs MediaPipe for pose detection and OpenCV for image processing.
 
 Features
-Pose Detection: Utilizes MediaPipe to detect body landmarks such as shoulders and hips for accurate shirt placement.
-Dynamic Shirt Overlay: Overlays selected shirt images onto the user based on pose landmarks.
-Shirt Selection: Cycle through different shirt images with the press of a button.
-Screenshot Capture: Save a screenshot of your virtual fitting session.
-User Interface: Displays instructions and shirt information on the video feed for ease of use.
+Pose Detection: Detects key body landmarks to accurately overlay shirts.
+Shirt Selection: Easily switch between multiple shirt images.
+Screenshot Capture: Save screenshots of your virtual fitting sessions.
+User Interface: Displays instructions and current shirt information.
 Installation
 Clone the Repository:
 
 bash
 Copy code
-git clone https://github.com/yourusername/virtual-dressing-room.git
+git clone https://github.com/Dharmik-Solanki-G/virtual-dressing-room.git
 cd virtual-dressing-room
 Install Dependencies:
 Ensure you have Python installed, then install the required packages:
@@ -21,23 +20,23 @@ bash
 Copy code
 pip install opencv-python mediapipe numpy
 Prepare Shirt Images:
-Place your shirt images (PNG with alpha channel for transparency) in the Resources/Shirts directory. Update the shirt_dir variable in the code to point to your shirt images directory.
 
+Place PNG images with transparency in the Resources/Shirts directory.
+Update the shirt_dir variable in app.py to point to your directory.
 Usage
 Run the Application:
 
 bash
 Copy code
-python virtual_dressing_room.py
+python app.py
 Controls:
 
-n: Change to the next shirt in the list.
+n: Change to the next shirt.
 s: Save the current frame as a screenshot (screenshot.png).
 q: Quit the application.
-Code Overview
-Initialization: Sets up MediaPipe for pose detection and OpenCV for video capture.
-Shirt Overlay: overlay_shirt function adjusts and places the shirt image on the detected pose landmarks.
-User Interface: show_gui function displays instructions and shirt information on the video frame.
-Main Loop: Captures video frames, detects pose landmarks, applies shirt overlay, and handles user inputs.
 Contributing
-Feel free to fork the repository, submit issues, or contribute improvements. Contributions and feedback are welcome!
+Contributions are welcome! Feel free to fork the repository, open issues, or submit pull requests.
+
+License
+This project is licensed under the MIT License.
+
