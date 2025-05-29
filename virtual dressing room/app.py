@@ -97,6 +97,13 @@ st.markdown("""
         background: white;
         box-shadow: 0 8px 32px rgba(0,0,0,0.1);
     }
+    
+    .default-shirt-section {
+        background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -121,6 +128,8 @@ if 'shirt_images' not in st.session_state:
     st.session_state.shirt_images = []
 if 'shirt_names' not in st.session_state:
     st.session_state.shirt_names = []
+if 'shirt_types' not in st.session_state:
+    st.session_state.shirt_types = []  # Track if shirt is default or uploaded
 if 'selected_shirt_index' not in st.session_state:
     st.session_state.selected_shirt_index = 0
 if 'camera_active' not in st.session_state:
@@ -129,27 +138,86 @@ if 'pose_detected' not in st.session_state:
     st.session_state.pose_detected = False
 if 'frames_processed' not in st.session_state:
     st.session_state.frames_processed = 0
+if 'default_shirts_loaded' not in st.session_state:
+    st.session_state.default_shirts_loaded = False
 
 def load_default_shirts():
     """Load default shirts from Resources/Shirts directory"""
-    shirt_dir = 'Resources/Shirts'
-    if os.path.exists(shirt_dir):
+    if st.session_state.default_shirts_loaded:
+        return
+    
+    # Try different possible paths
+    possible_paths = [
+        'Resources/Shirts',
+        './Resources/Shirts',
+        'virtual dressing room/Resources/Shirts',
+        './virtual dressing room/Resources/Shirts',
+        os.path.join(os.getcwd(), 'Resources', 'Shirts'),
+        os.path.join(os.path.dirname(__file__), 'Resources', 'Shirts')
+    ]
+    
+    shirt_dir = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            shirt_dir = path
+            break
+    
+    if shirt_dir is None:
+        st.warning("⚠️ Default shirts directory not found. Please check if 'Resources/Shirts' folder exists.")
+        st.info("Expected structure: Resources/Shirts/ containing 1.png, 2.png, etc.")
+        return
+    
+    try:
         shirt_files = [f for f in os.listdir(shirt_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        for shirt_file in sorted(shirt_files):
-            if shirt_file not in st.session_state.shirt_names:
-                shirt_path = os.path.join(shirt_dir, shirt_file)
-                try:
-                    pil_img = Image.open(shirt_path)
-                    if pil_img.mode != 'RGBA':
+        
+        # Sort shirt files numerically if they're numbered
+        def sort_key(filename):
+            try:
+                # Extract number from filename (e.g., "1.png" -> 1)
+                return int(os.path.splitext(filename)[0])
+            except ValueError:
+                return filename.lower()
+        
+        shirt_files.sort(key=sort_key)
+        
+        loaded_count = 0
+        for shirt_file in shirt_files:
+            shirt_path = os.path.join(shirt_dir, shirt_file)
+            try:
+                pil_img = Image.open(shirt_path)
+                
+                # Convert to RGBA if not already
+                if pil_img.mode != 'RGBA':
+                    # If it's RGB, add alpha channel (fully opaque)
+                    if pil_img.mode == 'RGB':
+                        # Create alpha channel
+                        alpha = Image.new('L', pil_img.size, 255)
+                        pil_img.putalpha(alpha)
+                    else:
                         pil_img = pil_img.convert('RGBA')
-                    
-                    shirt_array = np.array(pil_img)
-                    shirt_bgra = cv2.cvtColor(shirt_array, cv2.COLOR_RGBA2BGRA)
-                    
-                    st.session_state.shirt_images.append(shirt_bgra)
-                    st.session_state.shirt_names.append(shirt_file)
-                except Exception as e:
-                    st.error(f"Error loading {shirt_file}: {e}")
+                
+                shirt_array = np.array(pil_img)
+                shirt_bgra = cv2.cvtColor(shirt_array, cv2.COLOR_RGBA2BGRA)
+                
+                # Add to session state
+                st.session_state.shirt_images.append(shirt_bgra)
+                st.session_state.shirt_names.append(shirt_file)
+                st.session_state.shirt_types.append('default')
+                
+                loaded_count += 1
+                
+            except Exception as e:
+                st.error(f"Error loading {shirt_file}: {e}")
+        
+        if loaded_count > 0:
+            st.success(f"✅ Loaded {loaded_count} default shirts from {shirt_dir}")
+        else:
+            st.warning("No valid shirt images found in the default directory.")
+            
+        st.session_state.default_shirts_loaded = True
+        
+    except Exception as e:
+        st.error(f"Error accessing shirt directory {shirt_dir}: {e}")
 
 def process_uploaded_shirt(uploaded_file):
     """Process uploaded shirt image"""
@@ -223,13 +291,20 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # Load default shirts
-    if not st.session_state.shirt_images:
-        load_default_shirts()
+    # Load default shirts first
+    load_default_shirts()
 
     # Sidebar
     with st.sidebar:
         st.markdown("## 👕 **Shirt Collection**")
+        
+        # Show default shirts section
+        if any(t == 'default' for t in st.session_state.shirt_types):
+            st.markdown('<div class="default-shirt-section">', unsafe_allow_html=True)
+            st.markdown("### 🏪 **Default Collection**")
+            default_count = sum(1 for t in st.session_state.shirt_types if t == 'default')
+            st.markdown(f"📦 **{default_count}** pre-loaded shirts available")
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # Upload section
         st.markdown('<div class="upload-section">', unsafe_allow_html=True)
@@ -251,16 +326,21 @@ def main():
                     if shirt_img is not None:
                         st.session_state.shirt_images.append(shirt_img)
                         st.session_state.shirt_names.append(shirt_name)
+                        st.session_state.shirt_types.append('uploaded')
                         st.success(f"✅ Added {shirt_name}")
                 progress_bar.progress((i + 1) / len(uploaded_files))
             progress_bar.empty()
 
         # Stats section
         if st.session_state.shirt_images:
+            default_count = sum(1 for t in st.session_state.shirt_types if t == 'default')
+            uploaded_count = sum(1 for t in st.session_state.shirt_types if t == 'uploaded')
+            
             st.markdown(f"""
             <div class="stats-card">
                 <h3>📊 Collection Stats</h3>
-                <p><strong>{len(st.session_state.shirt_images)}</strong> shirts available</p>
+                <p><strong>{len(st.session_state.shirt_images)}</strong> total shirts</p>
+                <p>🏪 <strong>{default_count}</strong> default | 📤 <strong>{uploaded_count}</strong> uploaded</p>
                 <p><strong>{st.session_state.frames_processed}</strong> frames processed</p>
                 <p>Status: {'🟢 Pose Detected' if st.session_state.pose_detected else '🔴 No Pose'}</p>
             </div>
@@ -270,7 +350,11 @@ def main():
         if st.session_state.shirt_images:
             st.markdown("### 🎽 **Select Your Shirt**")
             
-            for i, (shirt_img, shirt_name) in enumerate(zip(st.session_state.shirt_images, st.session_state.shirt_names)):
+            for i, (shirt_img, shirt_name, shirt_type) in enumerate(zip(
+                st.session_state.shirt_images, 
+                st.session_state.shirt_names, 
+                st.session_state.shirt_types
+            )):
                 selected_class = "selected" if i == st.session_state.selected_shirt_index else ""
                 
                 col1, col2 = st.columns([1, 2])
@@ -282,22 +366,46 @@ def main():
                     st.image(pil_img, width=80)
                 
                 with col2:
-                    if st.button(f"👕 {shirt_name}", key=f"shirt_{i}", help=f"Click to select {shirt_name}"):
+                    # Add icon based on shirt type
+                    icon = "🏪" if shirt_type == 'default' else "📤"
+                    display_name = f"{icon} {shirt_name}"
+                    
+                    if st.button(display_name, key=f"shirt_{i}", help=f"Click to select {shirt_name}"):
                         st.session_state.selected_shirt_index = i
                         st.success(f"Selected: {shirt_name}")
             
             # Management buttons
             st.markdown("---")
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
+            
             with col1:
-                if st.button("🗑️ Clear All"):
-                    st.session_state.shirt_images = []
-                    st.session_state.shirt_names = []
+                if st.button("🔄 Reload Defaults"):
+                    # Clear only default shirts and reload
+                    indices_to_keep = [i for i, t in enumerate(st.session_state.shirt_types) if t != 'default']
+                    st.session_state.shirt_images = [st.session_state.shirt_images[i] for i in indices_to_keep]
+                    st.session_state.shirt_names = [st.session_state.shirt_names[i] for i in indices_to_keep]
+                    st.session_state.shirt_types = [st.session_state.shirt_types[i] for i in indices_to_keep]
+                    st.session_state.default_shirts_loaded = False
                     st.session_state.selected_shirt_index = 0
                     st.rerun()
             
             with col2:
-                if st.button("🔄 Refresh"):
+                if st.button("🗑️ Clear Uploaded"):
+                    # Clear only uploaded shirts
+                    indices_to_keep = [i for i, t in enumerate(st.session_state.shirt_types) if t != 'uploaded']
+                    st.session_state.shirt_images = [st.session_state.shirt_images[i] for i in indices_to_keep]
+                    st.session_state.shirt_names = [st.session_state.shirt_names[i] for i in indices_to_keep]
+                    st.session_state.shirt_types = [st.session_state.shirt_types[i] for i in indices_to_keep]
+                    st.session_state.selected_shirt_index = 0
+                    st.rerun()
+            
+            with col3:
+                if st.button("🗑️ Clear All"):
+                    st.session_state.shirt_images = []
+                    st.session_state.shirt_names = []
+                    st.session_state.shirt_types = []
+                    st.session_state.selected_shirt_index = 0
+                    st.session_state.default_shirts_loaded = False
                     st.rerun()
 
     # Main content
@@ -317,14 +425,12 @@ def main():
                     st.session_state.camera_active = True
                     st.success("Camera started! Stand in front of the camera.")
                 else:
-                    st.error("Please upload some shirts first!")
+                    st.error("Please wait for shirts to load or upload some shirts first!")
         
         with col_stop:
             if st.button("⏹️ Stop Camera", use_container_width=True):
                 st.session_state.camera_active = False
                 st.info("Camera stopped.")
-        
-
         
         st.markdown('</div>', unsafe_allow_html=True)
         
@@ -334,18 +440,24 @@ def main():
         # Instructions
         with st.expander("📋 **How to Use**", expanded=False):
             st.markdown("""
-            1. **Upload Shirts**: Use the sidebar to drag and drop shirt images
-            2. **Select Shirt**: Click on any shirt from your collection
-            3. **Start Camera**: Click the 'Start Camera' button
-            4. **Position Yourself**: Stand 3-6 feet from the camera
-            5. **Pose Naturally**: Raise your arms slightly for best results
-            6. **Try Different Shirts**: Use the sidebar to switch between shirts
+            1. **Default Shirts**: Pre-loaded shirts from Resources/Shirts folder are automatically available
+            2. **Upload More**: Use the sidebar to drag and drop additional shirt images  
+            3. **Select Shirt**: Click on any shirt from your collection (🏪 = default, 📤 = uploaded)
+            4. **Start Camera**: Click the 'Start Camera' button
+            5. **Position Yourself**: Stand 3-6 feet from the camera
+            6. **Pose Naturally**: Raise your arms slightly for best results
+            7. **Try Different Shirts**: Use the sidebar to switch between shirts
             
             **💡 Tips for Best Results:**
-            - Use PNG images with transparent backgrounds
+            - Default shirts should work well out of the box
+            - For uploaded shirts, use PNG images with transparent backgrounds
             - Ensure good lighting in your room
             - Stand against a plain background
             - Keep your full torso visible in the camera
+            
+            **🔧 Troubleshooting:**
+            - If default shirts don't load, check that Resources/Shirts folder exists
+            - Use "🔄 Reload Defaults" button to retry loading default shirts
             """)
     
     with col2:
@@ -355,6 +467,7 @@ def main():
         if st.session_state.shirt_images and st.session_state.selected_shirt_index < len(st.session_state.shirt_images):
             current_shirt = st.session_state.shirt_images[st.session_state.selected_shirt_index]
             current_name = st.session_state.shirt_names[st.session_state.selected_shirt_index]
+            current_type = st.session_state.shirt_types[st.session_state.selected_shirt_index]
             
             # Display current shirt with nice styling
             st.markdown('<div class="shirt-card">', unsafe_allow_html=True)
@@ -362,14 +475,16 @@ def main():
             pil_img = Image.fromarray(shirt_rgb)
             st.image(pil_img, caption=f"Selected: {current_name}", use_column_width=True)
             
+            type_icon = "🏪 Default" if current_type == 'default' else "📤 Uploaded"
             st.markdown(f"""
             **👕 Name:** {current_name}  
+            **📂 Type:** {type_icon}  
             **📐 Dimensions:** {current_shirt.shape[1]} × {current_shirt.shape[0]}  
             **🎨 Channels:** {current_shirt.shape[2]}
             """)
             st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("No shirt selected. Upload and select a shirt to get started!")
+            st.info("No shirt selected. Default shirts should load automatically, or upload your own!")
         
         # Performance metrics
         if st.session_state.camera_active:
@@ -424,10 +539,11 @@ def main():
                 
                 if frame_count % 30 == 0:  # Update stats every 30 frames
                     fps = frame_count / (time.time() - start_time)
-                    with stats_placeholder.container():
-                        st.metric("FPS", f"{fps:.1f}")
-                        st.metric("Frames", st.session_state.frames_processed)
-                        st.metric("Pose", "✅ Detected" if st.session_state.pose_detected else "❌ Not Detected")
+                    if 'stats_placeholder' in locals():
+                        with stats_placeholder.container():
+                            st.metric("FPS", f"{fps:.1f}")
+                            st.metric("Frames", st.session_state.frames_processed)
+                            st.metric("Pose", "✅ Detected" if st.session_state.pose_detected else "❌ Not Detected")
                 
                 time.sleep(0.033)  # ~30 FPS
         
